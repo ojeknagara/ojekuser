@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Riwayat Order - ONAR</title>
+<style>
+:root {
+    --primary-color: #ff3b30;
+    --secondary-color: #fff;
+    --hover-color: #e6332a;
+    --font-family: 'Arial', sans-serif;
+    --border-radius: 8px;
+    --padding: 12px;
+}
+
+* { box-sizing: border-box; margin:0; padding:0; font-family: var(--font-family); }
+
+body { background:#fff; color:#333; min-height:100vh; padding:16px; }
+
+button {
+    padding: var(--padding);
+    border-radius: var(--border-radius);
+    border:none;
+    background-color: var(--primary-color);
+    color: var(--secondary-color);
+    cursor:pointer;
+    transition:0.3s;
+}
+button:hover { background-color: var(--hover-color); }
+
+table {
+    width:100%;
+    border-collapse: collapse;
+    margin-top:16px;
+}
+
+th, td {
+    border:1px solid #ccc;
+    padding: var(--padding);
+    text-align:left;
+}
+
+tr:hover { background-color: #ffe6e0; cursor:pointer; }
+
+/* Modal */
+.modal-bg {
+    position: fixed;
+    display: none;
+    top:0; left:0;
+    width:100%; height:100%;
+    background: rgba(0,0,0,0.5);
+    align-items:center; justify-content:center;
+    z-index:10000;
+}
+
+.modal {
+    background:#fff;
+    padding:24px;
+    border-radius: var(--border-radius);
+    max-width:500px;
+    width:90%;
+}
+
+#map { width:100%; min-height:100px; border-radius: var(--border-radius); border:1px solid #ccc; margin-top:16px; }
+</style>
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+const supabase = createClient(
+    "https://svlujqllkhgxoudvloqi.supabase.co",
+    "sb_publishable_XtsTRM9-4-6UUBRJMzvCfw_UkvsHBbw"
+);
+
+let currentUser = null;
+let orders = [];
+
+async function loadUser(){
+    const { data: sessions } = await supabase.from('sessions')
+        .select('*')
+        .eq('role','user')
+        .order('last_active', { ascending:false })
+        .limit(1);
+
+    if(!sessions || sessions.length===0){
+        alert("Session tidak ditemukan, login ulang!");
+        location.href = "index.html";
+        return;
+    }
+
+    const user_id = sessions[0].user_id;
+    const { data: users, error } = await supabase.from('users')
+        .select('*')
+        .eq('id', user_id)
+        .limit(1);
+
+    if(error || users.length===0){
+        alert("Data user tidak ditemukan, login ulang!");
+        location.href = "index.html";
+        return;
+    }
+
+    currentUser = users[0];
+}
+
+async function loadOrders(){
+    if(!currentUser) return;
+
+    const { data, error } = await supabase.from('order_history_user')
+        .select(`order_id`)
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending:false })
+        .limit(10);
+
+    if(error){
+        alert("Gagal load riwayat order: " + error.message);
+        return;
+    }
+
+    const orderIds = data.map(o => o.order_id);
+    if(orderIds.length === 0) return;
+
+    const { data: ordersData } = await supabase.from('orders')
+        .select(`id,type,driver_id,titik_jemput,titik_antar,tarif,status`)
+        .in('id', orderIds);
+
+    const driverIds = ordersData.map(o => o.driver_id).filter(Boolean);
+    const { data: drivers } = await supabase.from('drivers')
+        .select(`id,nama`)
+        .in('id', driverIds);
+
+    const driverMap = {};
+    drivers.forEach(d => { driverMap[d.id] = d.nama; });
+
+    orders = ordersData.map(o => ({
+        ...o,
+        driver_nama: o.driver_id ? driverMap[o.driver_id] || '-' : '-'
+    }));
+
+    renderTable();
+}
+
+function renderTable(){
+    const tbody = document.getElementById('orders-tbody');
+    tbody.innerHTML = '';
+    orders.forEach(order => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${order.id}</td>
+            <td>${order.type}</td>
+            <td>${order.driver_nama}</td>
+            <td>${order.status}</td>
+            <td>Rp ${order.tarif || 0}</td>
+            <td><button onclick="showMap('${order.titik_jemput}','${order.titik_antar}')">Lihat Rute</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// ===== showMap tanpa API Key =====
+window.showMap = function(jemput, antar){
+    const mapDiv = document.getElementById('map');
+    const mapsUrl = `https://www.google.com/maps/dir/${encodeURIComponent(jemput)}/${encodeURIComponent(antar)}`;
+    mapDiv.innerHTML = `<a href="${mapsUrl}" target="_blank">Klik di sini untuk lihat rute di Google Maps</a>`;
+    document.getElementById('modal-bg').style.display = 'flex';
+}
+
+window.addEventListener('load', async ()=>{
+    await loadUser();
+    await loadOrders();
+
+    document.getElementById('btn-close-modal').addEventListener('click', ()=> 
+        document.getElementById('modal-bg').style.display='none'
+    );
+});
+</script>
+</head>
+<body>
+
+<button onclick="location.href='index.html'">Kembali ke Dashboard</button>
+
+<h2 style="color:#ff3b30; text-align:center; margin-top:16px;">Riwayat Order</h2>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID Order</th>
+            <th>Jenis</th>
+            <th>Driver</th>
+            <th>Status</th>
+            <th>Biaya</th>
+            <th>Rute</th>
+        </tr>
+    </thead>
+    <tbody id="orders-tbody">
+        <!-- Baris order akan di-render JS -->
+    </tbody>
+</table>
+
+<!-- Modal Map -->
+<div class="modal-bg" id="modal-bg">
+    <div class="modal">
+        <h3>Rute Order</h3>
+        <div id="map"></div>
+        <button id="btn-close-modal" style="margin-top:12px;">Tutup</button>
+    </div>
+</div>
+
+</body>
+</html>

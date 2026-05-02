@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ojek Nagara - Pesan Ojek</title>
+    
+    <!-- LEAFLET & ROUTING MACHINE -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    
+    <style>
+        /* PATOKAN DESIGN CSS MURNI & VARIABEL */
+        :root {
+            --primary-red: #ff0000;
+            --hover-red: #cc0000;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-main: #333333;
+            --text-muted: #6c757d;
+            --border-color: #dee2e6;
+            --radius: 12px;
+            --shadow: 0 4px 6px rgba(0,0,0,0.1);
+            --transition: all 0.3s ease;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; }
+
+        .app-container {
+            width: 100%; max-width: 600px; min-height: 100vh; background-color: var(--card-bg);
+            box-shadow: var(--shadow); position: relative; overflow-x: hidden; display: flex; flex-direction: column;
+        }
+
+        header {
+            background-color: var(--primary-red); color: white; padding: 16px 20px;
+            display: flex; align-items: center; position: sticky; top: 0; z-index: 100;
+        }
+
+        .btn-back { background: none; border: none; color: white; font-size: 24px; cursor: pointer; margin-right: 15px; transition: var(--transition); }
+        .btn-back:hover { transform: translateX(-3px); }
+
+        .form-section { padding: 20px; flex: 1; }
+
+        .input-box {
+            background-color: var(--bg-color); border: 1px solid var(--border-color); border-radius: var(--radius);
+            padding: 15px; margin-bottom: 15px; cursor: pointer; transition: var(--transition);
+            display: flex; align-items: center; gap: 15px;
+        }
+        .input-box:hover { border-color: var(--primary-red); box-shadow: 0 2px 8px rgba(255,0,0,0.1); }
+
+        .icon-pin { font-size: 20px; }
+        .text-content { flex: 1; overflow: hidden; }
+        .text-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+        .text-value { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .tarif-box { padding: 20px; border-top: 1px solid var(--border-color); background: var(--card-bg); }
+        .tarif-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 16px; }
+        .tarif-total { font-size: 20px; font-weight: bold; color: var(--primary-red); }
+
+        .btn-primary {
+            width: 100%; background-color: var(--primary-red); color: white; border: none; padding: 16px;
+            border-radius: var(--radius); font-size: 16px; font-weight: bold; cursor: pointer; transition: var(--transition);
+        }
+        .btn-primary:hover { background-color: var(--hover-red); }
+        .btn-danger { background-color: #dc3545; }
+        .btn-danger:hover { background-color: #c82333; }
+        .btn-secondary { background-color: var(--text-muted); color: white; }
+        .btn-secondary:hover { background-color: #5a6268; }
+        .btn-disabled { background-color: #ccc; cursor: not-allowed; }
+
+        /* MODAL SYSTEM */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6);
+            display: none; justify-content: center; align-items: center; z-index: 2000; opacity: 0; transition: opacity 0.3s;
+        }
+        .modal-overlay.active { display: flex; opacity: 1; }
+
+        .modal-content {
+            background: var(--card-bg); width: 90%; max-width: 400px; border-radius: var(--radius); padding: 24px;
+            text-align: center; box-shadow: var(--shadow); animation: popIn 0.3s ease;
+        }
+
+        @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+        .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+        .modal-actions button { flex: 1; }
+
+        /* MAP MODAL */
+        .map-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--card-bg);
+            display: none; flex-direction: column; z-index: 1000;
+        }
+        .map-search-bar { padding: 15px; background: var(--card-bg); box-shadow: var(--shadow); position: relative; z-index: 1010; }
+        .search-input { width: 100%; padding: 12px 15px; border: 1px solid var(--border-color); border-radius: var(--radius); font-size: 14px; outline: none; }
+        .search-input:focus { border-color: var(--primary-red); }
+        .search-results {
+            position: absolute; top: 100%; left: 15px; right: 15px; background: var(--card-bg); border-radius: var(--radius);
+            box-shadow: var(--shadow); max-height: 250px; overflow-y: auto; display: none;
+        }
+        .result-item { padding: 12px 15px; border-bottom: 1px solid var(--border-color); cursor: pointer; font-size: 14px; transition: var(--transition); }
+        .result-item:hover { background-color: var(--bg-color); color: var(--primary-red); }
+        .result-item b { color: var(--primary-red); }
+        .result-dist { font-size: 11px; color: var(--text-muted); float: right; }
+
+        .map-container { flex: 1; width: 100%; position: relative; }
+        #leaflet-map { width: 100%; height: 100%; }
+
+        .map-footer { padding: 15px; background: var(--card-bg); box-shadow: 0 -4px 6px rgba(0,0,0,0.05); z-index: 1010; }
+        .textarea-note { width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: var(--radius); margin-bottom: 10px; resize: none; }
+
+        /* ACTIVE ORDER VIEW */
+        .active-order-view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--card-bg); z-index: 500; display: none; flex-direction: column; }
+        #tracking-map { flex: 1; width: 100%; }
+        
+        /* HIDE ROUTING TEXT INSTRUCTIONS */
+        .leaflet-routing-container { display: none !important; }
+
+        .driver-panel { padding: 20px; background: var(--card-bg); border-top: 3px solid var(--primary-red); box-shadow: 0 -4px 10px rgba(0,0,0,0.1); z-index: 510; }
+        
+        .driver-info { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+        .driver-photo { width: 50px; height: 50px; border-radius: 50%; background: var(--border-color); object-fit: cover; }
+        .driver-details { flex: 1; }
+        .driver-name { font-weight: bold; font-size: 16px; }
+        .driver-vehicle { font-size: 13px; color: var(--text-muted); }
+        .plat-number { display: inline-block; padding: 3px 8px; background: var(--bg-color); border: 1px solid #ccc; border-radius: 4px; font-weight: bold; margin-top: 5px; }
+
+        /* ANIMASI SEARCHING */
+        .pulse-text { animation: pulse 1.5s infinite; color: var(--text-muted); font-size: 14px; font-weight: 500; }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+
+        /* CHAT SYSTEM */
+        .chat-btn { position: relative; }
+        .chat-badge { position: absolute; top: -5px; right: -5px; background: var(--primary-red); color: white; font-size: 10px; padding: 3px 6px; border-radius: 10px; display: none; }
+        .chat-room { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 3000; display: none; flex-direction: column; }
+        .chat-header { background: var(--primary-red); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; }
+        .chat-messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .msg-bubble { max-width: 75%; padding: 10px 15px; border-radius: 15px; font-size: 14px; }
+        .msg-user { align-self: flex-end; background: var(--primary-red); color: white; border-bottom-right-radius: 2px; }
+        .msg-driver { align-self: flex-start; background: white; border: 1px solid var(--border-color); border-bottom-left-radius: 2px; }
+        .chat-input-area { padding: 15px; background: white; border-top: 1px solid var(--border-color); display: flex; gap: 10px; }
+        .chat-input-area input { flex: 1; padding: 10px; border: 1px solid var(--border-color); border-radius: 20px; outline: none; }
+    </style>
+</head>
+<body>
+
+    <script type="module">
+        import { supabase } from './supabaseClient.js'
+        window.supabase = supabase;
+    </script>
+
+    <div class="app-container">
+        <header>
+            <button class="btn-back" onclick="window.location.href='index.html'">&#8592;</button>
+            <h3>Ojek Nagara</h3>
+        </header>
+
+        <div id="dev-warning" style="display:none; background: #ffe5e5; color: red; padding: 10px; margin: 15px; border-radius: 8px; font-size: 12px; font-weight: bold; text-align: center;"></div>
+
+        <div class="form-section" id="form-section">
+            <div class="input-box" onclick="openMapModal('jemput')">
+                <div class="icon-pin" style="color: var(--primary-red);">📍</div>
+                <div class="text-content">
+                    <div class="text-label">Titik Jemput</div>
+                    <div class="text-value" id="label-jemput">Pilih lokasi penjemputan...</div>
+                </div>
+            </div>
+
+            <div class="input-box" onclick="openMapModal('antar')">
+                <div class="icon-pin" style="color: var(--text-main);">🏁</div>
+                <div class="text-content">
+                    <div class="text-label">Titik Antar</div>
+                    <div class="text-value" id="label-antar">Pilih lokasi tujuan...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tarif-box" id="tarif-box" style="display: none;">
+            <div class="tarif-row">
+                <span>Jarak Tempuh</span>
+                <span id="jarak-text">0 km</span>
+            </div>
+            <div class="tarif-row">
+                <span>Total Biaya</span>
+                <span class="tarif-total" id="harga-text">Rp 0</span>
+            </div>
+            <button class="btn-primary" onclick="showConfirmOrderModal()" style="margin-top: 15px;" id="btn-pesan">Pesan Ojek Sekarang</button>
+        </div>
+
+        <div class="active-order-view" id="active-order-view">
+            <header>
+                <h3 id="order-status-title">Mencari Driver...</h3>
+            </header>
+            <div id="tracking-map"></div>
+
+            <div class="driver-panel" id="searching-panel">
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <div class="pulse-text">⏳ Sedang mencarikan driver terdekat...</div>
+                </div>
+                <button class="btn-primary btn-danger" onclick="showCancelModal()">Batalkan Pencarian</button>
+            </div>
+
+            <div class="driver-panel" id="driver-panel" style="display: none;">
+                <div class="driver-info">
+                    <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00czEuNzktNCA0LTQtMS43OS00LTQtNHMtNCAxLjc5LTQgNHMxLjc5IDQgNCA0em0wIDJjLTIuNjcgMC04IDEuMzQtOCA0djJoMTZ2LTJjMC0yLjY2LTUuMzMtNC04LTR6Ii8+" class="driver-photo" id="driver-photo" alt="Driver">
+                    <div class="driver-details">
+                        <div class="driver-name" id="driver-name">Nama Driver</div>
+                        <div class="driver-vehicle" id="driver-vehicle">Motor Standar</div>
+                        <div class="plat-number" id="driver-plat">-</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-primary btn-secondary chat-btn" onclick="openChatRoom()">
+                        Chat <span class="chat-badge" id="chat-notif">!</span>
+                    </button>
+                    <button class="btn-primary btn-danger" id="btn-cancel-order" onclick="showCancelModal()">Batal</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="map-modal" id="map-modal">
+        <div class="map-search-bar">
+            <button class="btn-back" style="color: var(--text-main); margin-bottom: 10px;" onclick="closeMapModal()">&#8592; Kembali</button>
+            <input type="text" id="search-input" class="search-input" placeholder="Cari lokasi...">
+            <div class="search-results" id="search-results"></div>
+        </div>
+        <div class="map-container">
+            <div id="leaflet-map"></div>
+        </div>
+        <div class="map-footer">
+            <textarea id="location-note" class="textarea-note" placeholder="Catatan (Patokan rumah, dll)..." rows="2"></textarea>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-primary btn-secondary" onclick="useCurrentLocation()">📍 Lokasi Saya</button>
+                <button class="btn-primary" onclick="saveLocation()">Simpan Lokasi</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-room" id="chat-room">
+        <div class="chat-header">
+            <h4>Chat Driver</h4>
+            <button style="background:none;border:none;color:white;font-size:20px;cursor:pointer;" onclick="closeChatRoom()">✖</button>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-area">
+            <input type="text" id="chat-input-box" placeholder="Ketik pesan...">
+            <button class="btn-primary" style="width: auto; padding: 10px 20px;" onclick="sendChatMessage()">Kirim</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-content">
+            <h3 id="confirm-title" style="margin-bottom: 15px;">Konfirmasi</h3>
+            <p id="confirm-message" style="color: var(--text-muted); margin-bottom: 20px;">Pesan konfirmasi disini.</p>
+            <div class="modal-actions">
+                <button class="btn-primary btn-secondary" id="confirm-no-btn" onclick="closeGlobalModal()">Tidak</button>
+                <button class="btn-primary" id="confirm-yes-btn">Ya</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LEAFLET JS SCRIPT -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+    <script>
+        /**
+         * ==========================================
+         * STATE MANAGEMENT
+         * ==========================================
+         */
+        let userUUID = null; 
+        let currentOrderUUID = null;
+        let currentDriverUUID = null;
+        let currentOrderStatus = null; // Tambahan status global untuk mempermudah logic rute
+        
+        let map, marker, trackingMap, driverMarker, userMarker;
+        let activeInputMode = null; 
+        let routingControl = null; // Tambahan Variabel Rute
+        
+        let locData = {
+            jemput: { lat: null, lng: null, address: '', note: '' },
+            antar: { lat: null, lng: null, address: '', note: '' }
+        };
+        
+        let userGPS = { lat: 3.5952, lng: 98.6722 }; // Default Medan
+        let tarifPerKm = 0; 
+
+        // Blank Photo SVG
+        const BLANK_PHOTO = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NjYyI+PHBhdGggZD0iTTEyIDEyYzIuMjEgMCA0LTEuNzkgNC00czEuNzktNCA0LTQtMS43OS00LTQtNHMtNCAxLjc5LTQgNHMxLjc5IDQgNCA0em0wIDJjLTIuNjcgMC04IDEuMzQtOCA0djJoMTZ2LTJjMC0yLjY2LTUuMzMtNC04LTR6Ii8+';
+
+        /**
+         * ==========================================
+         * INIT & DATABASE FETCHING
+         * ==========================================
+         */
+        async function initApp() {
+            if (!window.supabase) {
+                console.error("Supabase script belum berjalan.");
+                return setTimeout(initApp, 500);
+            }
+
+            // 1. Ambil User ID
+            const urlParams = new URLSearchParams(window.location.search);
+            let urlId = urlParams.get('id');
+
+            if (urlId) {
+                localStorage.setItem('user_id', urlId);
+                userUUID = urlId;
+            } else {
+                userUUID = localStorage.getItem('user_id');
+            }
+
+            if (!userUUID) {
+                document.getElementById('dev-warning').style.display = 'block';
+                document.getElementById('dev-warning').innerHTML = "User tidak terdeteksi. Pastikan sudah login.";
+                document.getElementById('btn-pesan').disabled = true;
+                document.getElementById('btn-pesan').classList.add('btn-disabled');
+                return; 
+            }
+
+            // 2. Ambil Tarif Ojek
+            try {
+                const { data: tarifData } = await window.supabase.from('tarif').select('ojek_per_km').limit(1).single();
+                if (tarifData && tarifData.ojek_per_km) {
+                    tarifPerKm = tarifData.ojek_per_km;
+                } else {
+                    tarifPerKm = 2500; // Fallback default
+                }
+            } catch (e) { tarifPerKm = 2500; }
+
+            initMaps();
+
+            // 3. Sistem Resume Order
+            if (userUUID) {
+                try {
+                    const { data: activeOrders, error } = await window.supabase
+                        .from('orders')
+                        .select('*')
+                        .eq('user_id', userUUID)
+                        .neq('status', 'done')
+                        .neq('status', 'cancelled')
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+
+                    if (activeOrders && activeOrders.length > 0) {
+                        const ord = activeOrders[0];
+                        currentOrderUUID = ord.id;
+                        
+                        locData.jemput = { lat: ord.pickup_lat, lng: ord.pickup_lng };
+                        locData.antar = { lat: ord.drop_lat, lng: ord.drop_lng };
+                        
+                        tampilkanLayarTracking();
+                        pantauStatusOrder();
+                        handleUpdateOrder(ord); // Panggil untuk sesuaikan UI panel
+                    }
+                } catch (e) { console.error("Error cek order aktif:", e); }
+            }
+        }
+
+        window.onload = initApp;
+
+        function initMaps() {
+            map = L.map('leaflet-map').setView([userGPS.lat, userGPS.lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            marker = L.marker([userGPS.lat, userGPS.lng], { draggable: true }).addTo(map);
+            
+            marker.on('dragend', function() {
+                const pos = marker.getLatLng();
+                reverseGeocode(pos.lat, pos.lng);
+            });
+
+            map.on('click', function(e) {
+                marker.setLatLng(e.latlng);
+                reverseGeocode(e.latlng.lat, e.latlng.lng);
+            });
+
+            trackingMap = L.map('tracking-map').setView([userGPS.lat, userGPS.lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(trackingMap);
+            
+            if(navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    userGPS.lat = pos.coords.latitude;
+                    userGPS.lng = pos.coords.longitude;
+                });
+            }
+        }
+
+        /**
+         * ==========================================
+         * ROUTING MACHINE FUNCTION (PENAMBAHAN BARU)
+         * ==========================================
+         */
+        function drawRoute(startLat, startLng, endLat, endLng) {
+            if (!trackingMap) return;
+            
+            if (routingControl) {
+                trackingMap.removeControl(routingControl);
+            }
+
+            routingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(startLat, startLng),
+                    L.latLng(endLat, endLng)
+                ],
+                routeWhileDragging: false,
+                addWaypoints: false,
+                fitSelectedRoutes: true,
+                show: false, // Menghilangkan panel instruksi teks rute
+                lineOptions: { styles: [{ color: '#ff0000', weight: 5, opacity: 0.8 }] }
+            }).addTo(trackingMap);
+        }
+
+        /**
+         * ==========================================
+         * UI CONTROLLERS (Modal System)
+         * ==========================================
+         */
+        function openMapModal(mode) {
+            activeInputMode = mode;
+            document.getElementById('map-modal').style.display = 'flex';
+            document.getElementById('search-input').value = '';
+            document.getElementById('location-note').value = locData[mode].note || '';
+            document.getElementById('search-results').style.display = 'none';
+            
+            setTimeout(() => {
+                map.invalidateSize();
+                if(locData[mode].lat) {
+                    const pos = [locData[mode].lat, locData[mode].lng];
+                    map.setView(pos, 16);
+                    marker.setLatLng(pos);
+                } else {
+                    map.setView([userGPS.lat, userGPS.lng], 15);
+                    marker.setLatLng([userGPS.lat, userGPS.lng]);
+                }
+            }, 200);
+        }
+
+        function closeMapModal() { document.getElementById('map-modal').style.display = 'none'; }
+
+        function showGlobalModal(title, message, yesCallback, hideNoButton = false) {
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-message').innerText = message;
+            
+            const btnNo = document.getElementById('confirm-no-btn');
+            const btnYes = document.getElementById('confirm-yes-btn');
+            
+            if(hideNoButton) {
+                btnNo.style.display = 'none';
+                btnYes.innerText = 'OK';
+            } else {
+                btnNo.style.display = 'block';
+                btnYes.innerText = 'Ya';
+            }
+
+            document.getElementById('confirm-modal').style.display = 'flex';
+            document.getElementById('confirm-modal').classList.add('active');
+            
+            btnYes.onclick = () => {
+                closeGlobalModal();
+                if(yesCallback) yesCallback();
+            };
+        }
+
+        function closeGlobalModal() {
+            const modal = document.getElementById('confirm-modal');
+            modal.classList.remove('active');
+            setTimeout(() => { modal.style.display = 'none'; }, 300);
+        }
+
+        /**
+         * ==========================================
+         * LIVE SEARCH (NOMINATIM) & HAVERSINE
+         * ==========================================
+         */
+        let debounceTimer;
+        document.getElementById('search-input').addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            const query = this.value.trim();
+            const resultsBox = document.getElementById('search-results');
+            
+            if (query.length < 3) {
+                resultsBox.style.display = 'none';
+                return;
+            }
+
+            resultsBox.style.display = 'block';
+            resultsBox.innerHTML = '<div class="result-item" style="text-align:center; color: var(--text-muted);">Mencari...</div>';
+
+            debounceTimer = setTimeout(() => { executeLiveSearch(query); }, 300);
+        });
+
+        async function executeLiveSearch(query) {
+            const viewbox = `${userGPS.lng-0.2},${userGPS.lat+0.2},${userGPS.lng+0.2},${userGPS.lat-0.2}`;
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&viewbox=${viewbox}&bounded=1&limit=6`;
+            
+            try {
+                const response = await fetch(url);
+                let data = await response.json();
+                const resultsBox = document.getElementById('search-results');
+
+                if (data.length === 0) {
+                    resultsBox.innerHTML = '<div class="result-item" style="text-align:center;">Lokasi tidak ditemukan</div>';
+                    return;
+                }
+
+                resultsBox.innerHTML = '';
+                const refPoint = marker.getLatLng();
+
+                data.forEach(item => {
+                    const lat = parseFloat(item.lat);
+                    const lng = parseFloat(item.lon);
+                    const dist = hitungHaversine(refPoint.lat, refPoint.lng, lat, lng);
+                    
+                    if (dist > 20) return; // Buang lebih dari 20km
+
+                    const cleanName = item.display_name.split(',').slice(0, 3).join(',');
+                    const regex = new RegExp(`(${query})`, 'gi');
+                    const highlightedName = cleanName.replace(regex, '<b>$1</b>');
+
+                    const div = document.createElement('div');
+                    div.className = 'result-item';
+                    div.innerHTML = `<div>${highlightedName}</div><div class="result-dist">${dist.toFixed(1)} km</div>`;
+                    
+                    div.onclick = () => {
+                        const pos = [lat, lng];
+                        map.setView(pos, 17);
+                        marker.setLatLng(pos);
+                        document.getElementById('search-input').value = cleanName;
+                        resultsBox.style.display = 'none';
+                    };
+                    resultsBox.appendChild(div);
+                });
+            } catch (error) {}
+        }
+
+        function hitungHaversine(lat1, lon1, lat2, lon2) {
+            const R = 6371; 
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+        }
+
+        async function reverseGeocode(lat, lng) {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                const data = await res.json();
+                document.getElementById('search-input').value = data.display_name.split(',').slice(0, 3).join(',');
+            } catch(e) {}
+        }
+
+        function useCurrentLocation() {
+            if(navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    const coords = [pos.coords.latitude, pos.coords.longitude];
+                    map.setView(coords, 17);
+                    marker.setLatLng(coords);
+                    reverseGeocode(coords[0], coords[1]);
+                });
+            }
+        }
+
+        function saveLocation() {
+            const pos = marker.getLatLng();
+            const address = document.getElementById('search-input').value || `Koordinat: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`;
+            const note = document.getElementById('location-note').value.trim();
+
+            locData[activeInputMode] = { lat: pos.lat, lng: pos.lng, address: address, note: note };
+            document.getElementById(`label-${activeInputMode}`).innerText = address;
+            
+            closeMapModal();
+            hitungTotalTarif();
+        }
+
+        function hitungTotalTarif() {
+            if(locData.jemput.lat && locData.antar.lat) {
+                const jarak = hitungHaversine(locData.jemput.lat, locData.jemput.lng, locData.antar.lat, locData.antar.lng);
+                const totalBiaya = Math.max(10000, Math.round(jarak * tarifPerKm)); 
+
+                document.getElementById('jarak-text').innerText = `${jarak.toFixed(2)} KM`;
+                document.getElementById('harga-text').innerText = `Rp ${totalBiaya.toLocaleString('id-ID')}`;
+                document.getElementById('tarif-box').style.display = 'block';
+            }
+        }
+
+        /**
+         * ==========================================
+         * PROSES ORDER & SUPABASE
+         * ==========================================
+         */
+        function showConfirmOrderModal() {
+            if(!userUUID) {
+                return showGlobalModal("Error", "User ID tidak ditemukan. Pastikan Anda sudah login.", null, true);
+            }
+            showGlobalModal("Konfirmasi Pesanan", "Yakin titik jemput dan antar sudah sesuai?", buatOrderBaru);
+        }
+
+        async function buatOrderBaru() {
+            const jarak = hitungHaversine(locData.jemput.lat, locData.jemput.lng, locData.antar.lat, locData.antar.lng);
+            const ongkir = Math.max(10000, Math.round(jarak * tarifPerKm));
+            const totalBayar = ongkir;
+
+            let noteJemput = locData.jemput.note ? `\n(Patokan: ${locData.jemput.note})` : '';
+            let noteAntar = locData.antar.note ? `\n(Patokan: ${locData.antar.note})` : '';
+            
+            const fullJemputAddress = `${locData.jemput.address}${noteJemput}`.trim();
+            const fullAntarAddress = `${locData.antar.address}${noteAntar}`.trim();
+
+            try {
+                const { data, error } = await window.supabase
+                    .from('orders')
+                    .insert([{
+                        user_id: userUUID,
+                        jenis: 'ojek', 
+                        status: 'waiting',
+                        titik_jemput: fullJemputAddress, 
+                        titik_antar: fullAntarAddress,
+                        pickup_lat: locData.jemput.lat,
+                        pickup_lng: locData.jemput.lng,
+                        drop_lat: locData.antar.lat,
+                        drop_lng: locData.antar.lng,
+                        jarak: jarak,
+                        ongkir: ongkir,
+                        total: totalBayar 
+                    }])
+                    .select('id')
+                    .single();
+
+                if (error) throw error;
+                
+                currentOrderUUID = data.id;
+                tampilkanLayarTracking();
+                pantauStatusOrder();
+
+                handleUpdateOrder({ status: 'waiting', id: data.id });
+
+            } catch (err) {
+                showGlobalModal("Gagal Pesan", "Terjadi kesalahan database: " + err.message, null, true);
+            }
+        }
+
+        /**
+         * ==========================================
+         * REALTIME TRACKING
+         * ==========================================
+         */
+        function tampilkanLayarTracking() {
+            document.getElementById('form-section').style.display = 'none';
+            document.getElementById('tarif-box').style.display = 'none';
+            document.getElementById('active-order-view').style.display = 'flex';
+            
+            setTimeout(() => {
+                trackingMap.invalidateSize();
+                
+                if(!userMarker) {
+                    userMarker = L.marker([locData.jemput.lat, locData.jemput.lng]).addTo(trackingMap).bindPopup("Titik Jemput").openPopup();
+                    L.marker([locData.antar.lat, locData.antar.lng], { opacity: 0.5 }).addTo(trackingMap).bindPopup("Titik Antar");
+                }
+                
+                trackingMap.setView([locData.jemput.lat, locData.jemput.lng], 15);
+            }, 300);
+        }
+
+        function pantauStatusOrder() {
+            window.supabase.channel(`order-${currentOrderUUID}`)
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${currentOrderUUID}` }, payload => {
+                    handleUpdateOrder(payload.new);
+                }).subscribe();
+        }
+
+        async function handleUpdateOrder(orderData) {
+            const status = orderData.status;
+            currentOrderStatus = status; // Simpan status terkini
+
+            if (status === 'waiting' || status === 'offered' || status === 'no_driver') {
+                document.getElementById('order-status-title').innerText = "Mencari Driver...";
+                document.getElementById('searching-panel').style.display = 'block';
+                document.getElementById('driver-panel').style.display = 'none';
+
+                if (status === 'no_driver') {
+                    supabase.from('orders').update({ status: 'waiting' }).eq('id', orderData.id).then();
+                }
+            }
+            else if (status === 'on_progress' || status === 'arrived_pickup' || status === 'on_trip') {
+                
+                if (status === 'on_trip') {
+                    document.getElementById('order-status-title').innerText = "Dalam Perjalanan";
+                    document.getElementById('btn-cancel-order').style.display = 'none'; 
+                } else {
+                    document.getElementById('order-status-title').innerText = status === 'on_progress' ? "Driver Menuju Lokasi" : "Driver Tiba di Lokasi";
+                }
+
+                document.getElementById('searching-panel').style.display = 'none';
+                document.getElementById('driver-panel').style.display = 'block';
+                
+                if(orderData.driver_id && currentDriverUUID !== orderData.driver_id) {
+                    currentDriverUUID = orderData.driver_id;
+                    const { data: driver } = await window.supabase.from('drivers').select('*').eq('id', currentDriverUUID).single();
+                    if(driver) {
+                        document.getElementById('driver-name').innerText = driver.nama;
+                        document.getElementById('driver-vehicle').innerText = driver.jenis_motor || 'Motor Standar';
+                        document.getElementById('driver-plat').innerText = driver.no_plat || '-';
+                        
+                        if(driver.foto) {
+                            const imgUrl = window.supabase.storage.from('data-ojek').getPublicUrl(driver.foto).data.publicUrl;
+                            document.getElementById('driver-photo').src = imgUrl;
+                        } else {
+                            document.getElementById('driver-photo').src = BLANK_PHOTO;
+                        }
+                        
+                        // Menampilkan driver pertama kali & menggambar rute
+                        if(driver.lat && driver.lng) {
+                            if(!driverMarker) {
+                                const motorIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3721/3721619.png', iconSize: [35,35] });
+                                driverMarker = L.marker([driver.lat, driver.lng], {icon: motorIcon}).addTo(trackingMap);
+                            }
+                            
+                            // Eksekusi Rute awal
+                            if (status === 'on_progress' || status === 'arrived_pickup') {
+                                drawRoute(driver.lat, driver.lng, locData.jemput.lat, locData.jemput.lng);
+                            } else if (status === 'on_trip') {
+                                drawRoute(driver.lat, driver.lng, locData.antar.lat, locData.antar.lng);
+                            }
+                        }
+
+                        initRealtimeChat();
+                        pantauLokasiDriver();
+                    }
+                } else if (currentDriverUUID && driverMarker) {
+                    // Update penggambaran rute bila driver id sama namun status berubah
+                    const drLat = driverMarker.getLatLng().lat;
+                    const drLng = driverMarker.getLatLng().lng;
+                    if (status === 'on_progress') {
+                        drawRoute(drLat, drLng, locData.jemput.lat, locData.jemput.lng);
+                    } else if (status === 'on_trip') {
+                        drawRoute(drLat, drLng, locData.antar.lat, locData.antar.lng);
+                    }
+                }
+            } 
+            else if (status === 'done' || status === 'cancelled') {
+                if(currentOrderUUID) {
+                    await window.supabase.from('chat_messages').delete().eq('order_id', currentOrderUUID);
+                }
+                const msg = status === 'done' ? "Pesanan Selesai. Terima kasih!" : "Pesanan dibatalkan.";
+                showGlobalModal("Informasi", msg, () => {
+                    window.location.reload();
+                }, true);
+            }
+        }
+
+        function pantauLokasiDriver() {
+            window.supabase.channel(`driver-${currentDriverUUID}`)
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'drivers', filter: `id=eq.${currentDriverUUID}` }, payload => {
+                    if(payload.new.lat && payload.new.lng && driverMarker) {
+                        // Update letak driver
+                        driverMarker.setLatLng([payload.new.lat, payload.new.lng]);
+
+                        // Update tarikan garis rute secara dinamis
+                        if (currentOrderStatus === 'on_progress' || currentOrderStatus === 'arrived_pickup') {
+                            drawRoute(payload.new.lat, payload.new.lng, locData.jemput.lat, locData.jemput.lng);
+                        } else if (currentOrderStatus === 'on_trip') {
+                            drawRoute(payload.new.lat, payload.new.lng, locData.antar.lat, locData.antar.lng);
+                        }
+                    }
+                }).subscribe();
+        }
+
+        function showCancelModal() {
+            showGlobalModal("Batal Order", "Apakah Anda yakin ingin membatalkan pesanan ini?", async () => {
+                await window.supabase.rpc('user_cancel_order', { p_order_id: currentOrderUUID, p_user_id: userUUID });
+                await window.supabase.from('chat_messages').delete().eq('order_id', currentOrderUUID);
+                window.location.reload();
+            });
+        }
+
+        /**
+         * ==========================================
+         * CHAT SYSTEM
+         * ==========================================
+         */
+        function openChatRoom() {
+            document.getElementById('chat-room').style.display = 'flex';
+            document.getElementById('chat-notif').style.display = 'none';
+            const container = document.getElementById('chat-messages');
+            container.scrollTop = container.scrollHeight;
+        }
+        function closeChatRoom() { document.getElementById('chat-room').style.display = 'none'; }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input-box');
+            const msg = input.value.trim();
+            if(!msg) return;
+            input.value = '';
+            
+            await window.supabase.from('chat_messages').insert([{
+                order_id: currentOrderUUID,
+                sender_id: userUUID,
+                pesan: msg 
+            }]);
+        }
+
+        function initRealtimeChat() {
+            window.supabase.from('chat_messages').select('*').eq('order_id', currentOrderUUID).order('created_at', {ascending: true})
+                .then(({data}) => {
+                    document.getElementById('chat-messages').innerHTML = '';
+                    if(data) data.forEach(m => renderNewMessage(m));
+                });
+
+            window.supabase.channel(`chat-${currentOrderUUID}`)
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `order_id=eq.${currentOrderUUID}` }, payload => {
+                    const newMsg = payload.new;
+                    renderNewMessage(newMsg);
+                    
+                    if (newMsg.sender_id !== userUUID && document.getElementById('chat-room').style.display === 'none') {
+                        document.getElementById('chat-notif').style.display = 'block';
+                    }
+                }).subscribe();
+        }
+
+        function renderNewMessage(msgData) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            
+            if(msgData.sender_id === userUUID) {
+                div.className = 'msg-bubble msg-user';
+            } else {
+                div.className = 'msg-bubble msg-driver';
+            }
+            
+            div.innerText = msgData.pesan; 
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+    </script>
+</body>
+</html>

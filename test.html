@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Rotate Driver - Enterprise</title>
+
+<style>
+:root{
+  --primary:#ff1e1e;
+  --primary-dark:#cc0000;
+  --bg:#f9f9f9;
+  --white:#ffffff;
+  --text:#333;
+}
+
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+  font-family:Arial, sans-serif;
+}
+
+body{
+  background:var(--bg);
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+}
+
+.container{
+  background:var(--white);
+  padding:30px;
+  width:95%;
+  max-width:450px;
+  border-radius:15px;
+  box-shadow:0 10px 25px rgba(0,0,0,0.1);
+  text-align:center;
+}
+
+h1{
+  color:var(--primary);
+  margin-bottom:20px;
+}
+
+button{
+  background:var(--primary);
+  color:white;
+  border:none;
+  padding:12px 20px;
+  border-radius:8px;
+  cursor:pointer;
+  font-weight:bold;
+  transition:0.3s;
+}
+
+button:hover{
+  background:var(--primary-dark);
+}
+
+.log{
+  margin-top:20px;
+  background:#eee;
+  padding:10px;
+  border-radius:8px;
+  font-size:14px;
+  text-align:left;
+  max-height:150px;
+  overflow:auto;
+}
+
+/* Modal */
+.modal{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.4);
+  justify-content:center;
+  align-items:center;
+}
+
+.modal-content{
+  background:white;
+  padding:20px;
+  border-radius:10px;
+  width:90%;
+  max-width:350px;
+  text-align:center;
+}
+
+.modal-content h2{
+  color:var(--primary);
+  margin-bottom:10px;
+}
+
+.modal-content button{
+  margin-top:15px;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Test Rotate Driver</h1>
+  <button onclick="runRotation()">Jalankan Rotate Driver</button>
+  <div class="log" id="log">Menunggu eksekusi...</div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <h2 id="modalTitle"></h2>
+    <p id="modalMessage"></p>
+    <button onclick="closeModal()">Tutup</button>
+  </div>
+</div>
+
+<script>
+const FUNCTION_URL = "https://svlujqllkhgxoudvloqi.functions.supabase.co/rotate-driver";
+const ANON_KEY = "sb_publishable_XtsTRM9-4-6UUBRJMzvCfw_UkvsHBbw";
+
+async function runRotation(){
+
+  document.getElementById("log").innerText = "Memproses...";
+
+  try{
+
+    const response = await fetch(FUNCTION_URL,{
+      method:"POST",
+      headers:{
+        "Authorization":"Bearer "+ANON_KEY,
+        "Content-Type":"application/json"
+      }
+    });
+
+    const text = await response.text();
+
+    document.getElementById("log").innerText =
+      "Status: "+response.status+"\nResponse:\n"+text;
+
+    if(response.ok){
+      showModal("SUKSES","Rotation berhasil dijalankan.");
+    }else{
+      showModal("ERROR","Terjadi kesalahan.\n"+text);
+    }
+
+  }catch(error){
+    document.getElementById("log").innerText = error;
+    showModal("ERROR",error.message);
+  }
+
+}
+
+function showModal(title,message){
+  document.getElementById("modalTitle").innerText = title;
+  document.getElementById("modalMessage").innerText = message;
+  document.getElementById("modal").style.display="flex";
+}
+
+function closeModal(){
+  document.getElementById("modal").style.display="none";
+}
+</script>
+
+</body>
+</html>

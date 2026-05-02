@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+window.supabase = createClient(
+  "https://stymmythxvfhtfxdvcag.supabase.co",
+  "sb_publishable_SlQWfTzw1vqLS78Acs5EPQ_ww-bYyqM"
+);
+</script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<style>
+:root{--primary:#e60023;}
+body{margin:0;font-family:sans-serif}
+
+#map{height:45vh}
+
+.topbar{display:flex;align-items:center;padding:10px;background:#fff}
+.topbar button{border:none;background:none;font-size:18px}
+
+.card{background:#fff;margin:10px;padding:12px;border-radius:14px}
+
+.driver-box{display:flex;gap:10px;align-items:center}
+.driver-avatar{width:50px;height:50px;border-radius:50%;object-fit:cover}
+
+.chat-screen{
+position:fixed;top:0;left:0;right:0;bottom:0;
+background:#fff;display:none;flex-direction:column;z-index:999;
+}
+
+.chat-header{display:flex;gap:10px;padding:12px;background:var(--primary);color:#fff}
+.chat-box{flex:1;overflow:auto;padding:10px;background:#f0f0f0}
+
+.bubble{padding:10px;border-radius:12px;margin:5px 0;max-width:70%}
+.me{background:var(--primary);color:#fff;margin-left:auto}
+.other{background:#fff}
+
+.chat-input{display:flex;padding:10px}
+.chat-input input{flex:1;padding:10px;border-radius:10px;border:1px solid #ddd}
+.chat-input button{background:var(--primary);color:#fff;border:none;padding:10px;border-radius:10px}
+</style>
+</head>
+
+<body>
+
+<div class="topbar">
+<button onclick="history.back()">←</button>
+<b>Perjalanan</b>
+<button onclick="openChat()" style="margin-left:auto;background:#e60023;color:#fff;border-radius:8px;padding:5px 10px">Chat</button>
+</div>
+
+<div id="map"></div>
+
+<div class="card">
+<div class="driver-box">
+<img id="driverFoto" class="driver-avatar">
+<div>
+<div id="driverNama"></div>
+<div id="driverMotor"></div>
+</div>
+</div>
+<div id="etaText"></div>
+</div>
+
+<!-- CHAT -->
+<div id="chatScreen" class="chat-screen">
+<div class="chat-header">
+<button onclick="closeChat()">←</button>
+Chat Driver
+</div>
+
+<div id="chatBox" class="chat-box"></div>
+
+<div class="chat-input">
+<input id="chatInput">
+<button onclick="sendChat()">Kirim</button>
+</div>
+</div>
+
+<script>
+
+const orderId = new URL(location.href).searchParams.get("id")
+
+let order,pickup,drop,userId
+let map,driverMarker,routeLine,pickMarker,dropMarker
+let driverChannel,chatChannel,orderChannel
+let lastRouteTime=0
+
+// ===== LOAD =====
+async function loadOrder(){
+
+while(!window.supabase){
+await new Promise(r=>setTimeout(r,50))
+}
+
+const {data:user}=await supabase.rpc("cek_session",{p_token:localStorage.getItem("token")})
+userId=user[0].user_id
+
+const {data}=await supabase.from("orders").select("*").eq("id",orderId).single()
+order=data
+
+pickup={lat:order.pickup_lat,lng:order.pickup_lng}
+drop={lat:order.drop_lat,lng:order.drop_lng}
+
+loadDriver(order.driver_id)
+listenOrder()
+initChat()
+}
+
+// ===== DRIVER =====
+async function loadDriver(id){
+
+const {data}=await supabase.from("drivers").select("*").eq("id",id).single()
+
+driverNama.innerText=data.nama
+driverMotor.innerText=data.jenis_motor+" • "+data.no_plat
+
+// 🔥 FIX FOTO STORAGE
+driverFoto.src = supabase.storage
+.from('data-ojek')
+.getPublicUrl(data.foto).data.publicUrl
+
+initMap()
+trackDriver(id)
+}
+
+// ===== MAP =====
+function initMap(){
+if(map) map.remove()
+
+map=L.map('map').setView([pickup.lat,pickup.lng],13)
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map)
+
+pickMarker=L.marker([pickup.lat,pickup.lng]).addTo(map)
+dropMarker=L.marker([drop.lat,drop.lng]).addTo(map)
+}
+
+// ===== TRACK =====
+function trackDriver(id){
+
+driverChannel?.unsubscribe()
+
+driverChannel=supabase.channel("driver")
+.on("postgres_changes",{event:"UPDATE",schema:"public",table:"drivers"},p=>{
+const d=p.new
+if(d.id!==id)return
+
+moveDriver(d.lat,d.lng)
+
+const now=Date.now()
+if(now-lastRouteTime>4000){
+drawRoute(d.lat,d.lng)
+lastRouteTime=now
+}
+}).subscribe()
+}
+
+function moveDriver(lat,lng){
+if(!driverMarker){
+driverMarker=L.marker([lat,lng]).addTo(map)
+return
+}
+driverMarker.setLatLng([lat,lng])
+}
+
+// ===== ROUTE =====
+async function drawRoute(lat,lng){
+
+let target=order.status==="on_trip"?drop:pickup
+
+const res=await fetch(`https://router.project-osrm.org/route/v1/driving/${lng},${lat};${target.lng},${target.lat}?overview=full&geometries=geojson`)
+const data=await res.json()
+
+if(!data.routes)return
+
+if(routeLine) map.removeLayer(routeLine)
+routeLine=L.geoJSON(data.routes[0].geometry).addTo(map)
+
+etaText.innerText="ETA "+(data.routes[0].duration/60).toFixed(1)+" menit"
+}
+
+// ===== CHAT =====
+function openChat(){chatScreen.style.display="flex"}
+function closeChat(){chatScreen.style.display="none"}
+
+// load + realtime
+async function initChat(){
+
+// load lama
+const {data}=await supabase
+.from("chat_order")
+.select("*")
+.eq("order_id",orderId)
+.order("created_at",{ascending:true})
+
+data.forEach(renderChat)
+
+// realtime
+chatChannel?.unsubscribe()
+
+chatChannel=supabase.channel("chat-"+orderId)
+.on("postgres_changes",{event:"INSERT",schema:"public",table:"chat_order"},p=>{
+const c=p.new
+if(c.order_id!==orderId)return
+
+renderChat(c)
+}).subscribe()
+}
+
+function renderChat(c){
+
+const isMe=c.sender_id===userId
+
+const div=document.createElement("div")
+div.className="bubble "+(isMe?"me":"other")
+div.innerText=c.pesan
+
+chatBox.appendChild(div)
+chatBox.scrollTop=chatBox.scrollHeight
+}
+
+function sendChat(){
+
+const text=chatInput.value
+if(!text)return
+
+openChat()
+
+supabase.from("chat_order").insert({
+order_id:orderId,
+sender_id:userId,
+pesan:text
+})
+
+chatInput.value=""
+}
+
+// ===== ORDER =====
+function listenOrder(){
+
+orderChannel?.unsubscribe()
+
+orderChannel=supabase.channel("order")
+.on("postgres_changes",{event:"UPDATE",schema:"public",table:"orders"},p=>{
+const o=p.new
+if(o.id!==orderId)return
+
+order=o
+
+if(o.status==="done"||o.status==="cancelled"){
+location.href="index.html"
+}
+}).subscribe()
+}
+
+// ===== START =====
+loadOrder()
+
+</script>
+
+</body>
+</html>
